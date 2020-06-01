@@ -235,10 +235,10 @@ class ObjectMessage(Message):
     to do so.
     """
 
-    def __init__(self, object_):
+    def __init__(self, object_, execution_id=None):
         """Initialize the message."""
-
         self.object = object_
+        self.execution_id = execution_id
 
     def __str__(self):
         """Return a human readable version of this message"""
@@ -257,7 +257,10 @@ class ObjectMessage(Message):
         Examples:
             data = simplify(msg)
         """
-        return (sy.serde.msgpack.serde._simplify(worker, msg.object),)
+        return (
+            sy.serde.msgpack.serde._simplify(worker, msg.object),
+            sy.serde.msgpack.serde._simplify(worker, msg.execution_id),
+        )
 
     @staticmethod
     def detail(worker: AbstractWorker, msg_tuple: tuple) -> "ObjectMessage":
@@ -274,7 +277,11 @@ class ObjectMessage(Message):
         Examples:
             message = detail(sy.local_worker, msg_tuple)
         """
-        return ObjectMessage(sy.serde.msgpack.serde._detail(worker, msg_tuple[0]))
+        object_, execution_id = msg_tuple
+        return ObjectMessage(
+            sy.serde.msgpack.serde._detail(worker, object_),
+            sy.serde.msgpack.serde._detail(worker, execution_id),
+        )
 
     @staticmethod
     def bufferize(worker: AbstractWorker, message: "ObjectMessage") -> "ObjectMessagePB":
@@ -293,6 +300,8 @@ class ObjectMessage(Message):
         bufferized_obj = sy.serde.protobuf.serde._bufferize(worker, message.object)
         protobuf_obj_msg.tensor.CopyFrom(bufferized_obj)
 
+        sy.serde.protobuf.proto.set_protobuf_id(protobuf_obj_msg.execution_id, message.execution_id)
+
         return protobuf_obj_msg
 
     @staticmethod
@@ -306,11 +315,10 @@ class ObjectMessage(Message):
             Returns:
                 object_msg (ObjectMessage): deserialized ObjectMessagePB.
         """
-        protobuf_obj = protobuf_obj.tensor
-        object_ = sy.serde.protobuf.serde._unbufferize(worker, protobuf_obj)
-        object_msg = ObjectMessage(object_)
+        object_ = sy.serde.protobuf.serde._unbufferize(worker, protobuf_obj.tensor)
+        execution_id = sy.serde.protobuf.proto.get_protobuf_id(protobuf_obj.execution_id)
 
-        return object_msg
+        return ObjectMessage(object_, execution_id)
 
     @staticmethod
     def get_protobuf_schema():
