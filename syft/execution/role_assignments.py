@@ -57,6 +57,12 @@ class RoleAssignments(SyftSerializable):
         """
         self.assignments = {role_id: [] for role_id in self.assignments}
 
+    def items(self):
+        return self.assignments.items()
+
+    def values(self):
+        return self.assignments.values()
+
     @staticmethod
     def simplify(worker: AbstractWorker, assignments: "RoleAssignments") -> tuple:
         """ Simplify a RoleAssignments object.
