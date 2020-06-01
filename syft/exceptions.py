@@ -354,6 +354,12 @@ class EmptyCryptoPrimitiveStoreError(Exception):
         super().__init__(message)
 
 
+class PlaceholderNotInstantiatedError(Exception):
+    """Raised when trying to use a non-instantiated Placeholder as an Action argument."""
+
+    pass
+
+
 def route_method_exception(exception, self, args_, kwargs_):  # noqa: C901
     try:
         if self.is_wrapper:
