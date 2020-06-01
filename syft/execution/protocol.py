@@ -5,10 +5,12 @@ from typing import Union
 
 import syft as sy
 from syft.execution.placeholder import PlaceHolder
+from syft.execution.protocol_execution import ProtocolExecution
 from syft.execution.role import Role
 from syft.execution.role_assignments import RoleAssignments
 
 from syft.generic.abstract.sendable import AbstractSendable
+
 from syft.workers.abstract import AbstractWorker
 from syft.workers.virtual import VirtualWorker
 
@@ -32,7 +34,7 @@ class func2protocol(object):
     def __call__(self, protocol_function):
         # create the roles present in decorator
         roles = {
-            role_id: Role(worker=VirtualWorker(id=role_id, hook=sy.local_worker.hook))
+            role_id: Role(id=role_id, worker=VirtualWorker(id=role_id, hook=sy.local_worker.hook))
             for role_id in self.role_names
         }
         for role_id, state_tensors in self.states.items():
@@ -182,11 +184,36 @@ class Protocol(AbstractSendable):
         """
         Run actions on the workers provided for each Role from the Role's tape of actions.
         """
-        results_per_role = {}
-        for role_id, role in self.roles.items():
-            results_per_role[role_id] = role.execute()
+        # TODO
+        # Create a ProtocolExecution for each worker
+        executions = {}
+        for role_id, workers in self.role_assignments.items():
+            for worker in workers:
+                execution = ProtocolExecution(
+                    role=self.roles[role_id], role_assignments=self.role_assignments
+                )
+                executions[worker.id] = execution
 
-        return results_per_role
+                # Add execution to worker
+                worker._add_protocol_execution(execution)
+                # Send it?
+
+        nb_workers = sum([len(workers) for workers in self.role_assignments.values()])
+
+        # loop to round-robin execute?
+        results_per_worker = {}
+
+        # TODO check that we won't wait undefinitely
+        while len(results_per_worker) < nb_workers:
+            for worker_id, execution in executions.items():
+                if worker_id in results_per_worker:
+                    # Worker has already finished
+                    continue
+                is_over, result = execution.execute()
+                if is_over:
+                    results_per_worker[worker_id] = result
+
+        return results_per_worker
 
     def run(self, args_: Tuple, result_ids: List[Union[str, int]]):
         """Controls local or remote protocol execution.
@@ -205,7 +232,7 @@ class Protocol(AbstractSendable):
         self.role_assignments.assign(role_id, worker)
         self.roles[role_id].worker = worker
         # Add the role's placeholders to the worker
-        worker._add_protocol_placeholders(self.roles[role_id].placeholders)
+        # worker._add_protocol_placeholders(self.roles[role_id].placeholders)
 
     def assign_roles(self, worker_dict):
         """ Assign worker values to correspondent key role.
