@@ -12,6 +12,7 @@ from syft.execution.placeholder import PlaceHolder
 from syft.execution.placeholder_id import PlaceholderId
 from syft.execution.state import State
 from syft.execution.tracing import FrameworkWrapper
+from syft.exceptions import PlaceholderNotInstantiatedError
 from syft.generic.frameworks.types import FrameworkTensor
 from syft.serde.syft_serializable import SyftSerializable
 from syft.workers.abstract import AbstractWorker
@@ -160,18 +161,6 @@ class Role(SyftSerializable):
             ph_id: ph for ph_id, ph in self.placeholders.items() if ph_id in state_ph_ids
         }
 
-    def execute(self):
-        """ Make the role execute all its actions.
-        """
-        for action in self.actions:
-            self._execute_action(action)
-
-        output_placeholders = tuple(
-            self.placeholders[output_id] for output_id in self.output_placeholder_ids
-        )
-
-        return tuple(p.child for p in output_placeholders)
-
     def load(self, tensor):
         """ Load tensors used in a protocol from worker's local store
         """
@@ -210,9 +199,9 @@ class Role(SyftSerializable):
             action.kwargs,
             action.return_ids,
         )
-        _self = self._fetch_placeholders_from_ids(_self)
-        args_ = self._fetch_placeholders_from_ids(args_)
-        kwargs_ = self._fetch_placeholders_from_ids(kwargs_)
+        _self = self._fetch_placeholders_from_ids(_self, check_if_instantiated=True)
+        args_ = self._fetch_placeholders_from_ids(args_, check_if_instantiated=True)
+        kwargs_ = self._fetch_placeholders_from_ids(kwargs_, check_if_instantiated=True)
         return_values = self._fetch_placeholders_from_ids(return_values)
 
         # We can only instantiate placeholders, filter them
@@ -257,13 +246,22 @@ class Role(SyftSerializable):
 
         return Role.nested_object_traversal(obj, traversal_function, PlaceHolder)
 
-    def _fetch_placeholders_from_ids(self, obj):
+    def _fetch_placeholders_from_ids(self, obj, check_if_instantiated=False):
         """
         Replace in an object all ids with Placeholders
+
+        Args:
+            obj: the object in which we want to replace PlaceholderIds by Placeholders
+            check_if_instantiated: raise an error if the fetched Placeholder is not instantiated
         """
-        return Role.nested_object_traversal(
-            obj, lambda x: self.placeholders[x.value], PlaceholderId
-        )
+
+        def fetch_placeholder(placeholder_id):
+            placeholder = self.placeholders[placeholder_id.value]
+            if check_if_instantiated and placeholder.child is None:
+                raise PlaceholderNotInstantiatedError()
+            return placeholder
+
+        return Role.nested_object_traversal(obj, fetch_placeholder, PlaceholderId)
 
     def copy(self):
         # TODO not the cleanest method ever
